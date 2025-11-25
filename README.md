@@ -2,70 +2,32 @@
 
 First, I will lay out a diagram of my architecture, and each part of the pipeline will be detailed below (I thank ChatGPT for the drawing!).
 
-+--------------------+
-|    User Query       |
-+---------+----------+
-          |
-          v
-+--------------------+
-| Intent Classifier / |
-| Router (LLM + rules)|
-+---------+----------+
-          |
-          | JSON routing info:
-          | { intent, sources, mode, entities, confidence }
-          v
-+--------------------+
-| Retrieval Planner   |
-| (deterministic /    |
-| rule-based / tree)  |
-+---------+----------+
-          |
-          | Retrieval plan:
-          | { which index, top_k, retrieval mode,
-          |  query expansion, source targets }
-          v
-+---------------------------+
-| Retrieval Executor /      |
-| Hybrid Retriever          |
-| ------------------------- |
-|  - Vector Store (ANN)     |
-|    • Namespaces: docs,    |
-|      github, slack        |
-|    • Chunk embeddings +   |
-|      lightweight metadata |
-|  - BM25 Index             |
-|    • Tokenized text       |
-|    • Same chunk IDs       |
-|  - Metadata DB (authoritative) |
-|    • Source IDs, timestamps |
-+---------+-----------------+
-          |
-          | Retrieved top-k chunks per source
-          v
-+---------------------------+
-| Optional Reranker LLM     |
-| (3–6 most relevant chunks)|
-+---------+-----------------+
-          |
-          v
-+---------------------------+
-| Synthesizer / Generation |
-| LLM Grounded Response    |
-| -------------------------|
-| - Prompts engineered with|
-|   retrieved chunks       |
-| - Provide sources & URLs |
-| - Flag uncertainty       |
-| - Optionally call metadata|
-|   DB for authoritative   |
-+---------+-----------------+
-          |
-          v
-+---------------------------+
-|  Response + Evidence +    |
-|  Provenance to User       |
-+---------------------------+
+User Query
+   │
+   ▼
+Intent Classifier / Router (LLM + Rules)
+   │  └─> JSON routing info: {intent, sources, mode, entities, confidence}
+   ▼
+Retrieval Planner (Deterministic / Rule-based)
+   │  └─> Retrieval plan: {indices, top_k, retrieval mode, query expansions}
+   ▼
+Retrieval Executor / Hybrid Retriever
+   ├─ Vector Store (semantic embeddings, namespaces: docs, GitHub, Slack)
+   ├─ BM25 Index (tokenized text, same chunk IDs)
+   └─ Metadata DB (authoritative info: timestamps, IDs, PR/issue state)
+   │
+   ▼
+Optional Reranker LLM (3–6 most relevant chunks)
+   │
+   ▼
+Synthesizer / Generation LLM
+   ├─ Generates grounded response
+   ├─ Provides sources / URLs
+   ├─ Flags uncertainty
+   └─ Can call Metadata DB for authoritative info
+   │
+   ▼
+Final Response → User (with evidence, provenance)
 
 
 ## Step 1: Data Ingestion
@@ -291,51 +253,6 @@ Some of these metrics require human labeling (retrieval accuracy, routing correc
 ## CI / CD
 
 I already described the flow throughout the explanation of the architecture above, but here's a diagram (thanks to ChatGPT):
-                 ┌────────────────────────┐
-                 │   New Data Sources     │
-                 │                        │
-                 │ Slack Messages         │
-                 │ GitHub Data     │
-                 │ Markdown Docs          │
-                 └─────────┬──────────────┘
-                           │
-                           ▼
-                 ┌────────────────────────┐
-                 │   Event Detection /    │
-                 │   Polling / Webhooks   │
-                 └─────────┬──────────────┘
-                           │
-                           ▼
-                 ┌────────────────────────┐
-                 │  Ingestion Worker(s)   │
-                 │  (Containerized Pods!)  │
-                 └─────────┬──────────────┘
-                           │
-           ┌───────────────┼─────────────────┐
-           ▼               ▼                 ▼
- ┌────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
- │ Preprocess &   │ │ Vectorization / │ │ Update Metadata DB  │
- │ Chunk Text     │ │ Embedding       │ │ (timestamps, IDs,   │
- │ (Slack/GH/Docs)│ │ Generation      │ │ source paths)       │
- └───────────────┘ └───────────────┬─┘ └─────────────────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │ Update Vector Store │
-                         │ (semantic embeddings)│
-                         └─────────────────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │ Update BM25 Index   │
-                         │ (inverted index)    │
-                         └─────────────────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │  Validation / QA    │
-                         │  (counts, sample    │
-                         │  queries, metadata) │
-                         └─────────────────────┘
+![rag_cicd_pipeline.png](..%2Frag_cicd_pipeline.png)
 
 
