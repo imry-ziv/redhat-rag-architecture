@@ -129,9 +129,9 @@ This is the final answer returned to the user.
 ## API 
  
 Note that the API (e.g., FastAPI) for the RAG system must:
-•	Receive user queries
-•	Authenticate
-•	Call the pipeline: Router (intent class.) -> Retreival Planner -> Retrieval Executor -> Reranker LLM -> Prompt Builder -> Final LLM generator.
+- Receive user queries
+- Authenticate
+- Call the pipeline: Router (intent class.) -> Retreival Planner -> Retrieval Executor -> Reranker LLM -> Prompt Builder -> Final LLM generator.
  
 For this to work, the services that must be orchestrated by FastAPI behind the scenes are:
  
@@ -145,19 +145,19 @@ For this to work, the services that must be orchestrated by FastAPI behind the s
 I will not be writing the code, but here are the minimal responsibilities and endpoints for this:
  
 Minimal responsibilities:
-•	auth & rate limit
-•	call intent classifier (router)
-•	ask retrieval planner for plan
-•	execute plan via retrieval executors (talk to vector store, BM25, metadata DB)
-•	run reranker (if configured)
-•	construct prompt & call generation model
-•	return answer + evidence + provenance + tool links
+- auth & rate limit
+- call intent classifier (router)
+- ask retrieval planner for plan
+- execute plan via retrieval executors (talk to vector store, BM25, metadata DB)
+- run reranker (if configured)
+- construct prompt & call generation model
+- return answer + evidence + provenance + tool links
  
 Minimal endpoints:
-•	POST /v1/query — main query endpoint
-•	GET /healthz — liveness
-•	GET /readyz — readiness
-•	POST /admin/reindex — admin trigger for ingestion (authenticated)
+- POST /v1/query — main query endpoint
+- GET /healthz — liveness
+- GET /readyz — readiness 
+- POST /admin/reindex — admin trigger for ingestion (authenticated)
  
  
 C## ontainerization and container orchestration
@@ -173,7 +173,7 @@ Containerize the following separately:
  
 Orchestrate the above containers with OpenShift (of course…):
  
-•	Run each RAG component (client / container) in an OpenShift pod.
+- Run each RAG component (client / container) in an OpenShift pod.
  
  
 
