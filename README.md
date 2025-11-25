@@ -51,15 +51,15 @@ We perform asynchronous update via ingestion workers that run on schedule or eve
   
 ### Preprocessing
  
-•	Documentation (markdown): remove formatting characters such as "---", table borders, whitespace, but preserve ## Headings. Remove front matter if exists.
-•	GitHub: normalize text by stripping Markdown only in PRs, remove signatures, identify labels and assignees, extract structured fields, but keep relevant structured metadata such as issue number, PR number, state, repo…
-•	Slack: remove Slack formatting. According to Slack API: remove markers like <@user>, emoji, attachments. Also, flatten threaded messages for context.
+- Documentation (markdown): remove formatting characters such as "---", table borders, whitespace, but preserve ## Headings. Remove front matter if exists.
+- GitHub: normalize text by stripping Markdown only in PRs, remove signatures, identify labels and assignees, extract structured fields, but keep relevant structured metadata such as issue number, PR number, state, repo…
+- Slack: remove Slack formatting. According to Slack API: remove markers like <@user>, emoji, attachments. Also, flatten threaded messages for context.
  
 ### Chunking
 
-•	Documentation (markdown): split by semantic units relevant for .md, like headings, sections, or some token threshold that makes sense (default here for example is 1600 tokens). Optionally split at headings (#, ##..), and if a section is too large, do sliding window chunking with a smaller token size. Important to keep code blocks intact. Could also be done more automatically with Llamaindex (source is the comments here: https://www.reddit.com/r/Rag/comments/1k9m4vs/advice_needed_best_way_to_chunk_markdown_from_a/). Store chunk metadata: URI, last modified timestamp, author…
-•	GitHub: split long issues / PRs into chunks of 200-500 tokens (source for threshold: GPT5 + Gemini). Extract code snippets as separate chunks. Alternatively, chunk by comments /thread turns, and join too-short comments into conversation windows with sliding chunking. Store chunk metadata: source type (issue, pr, comment), repo name, issue/PR number, created_at…
-•	Slack: probably good to chunk by thread or else we lose context across chunks. Alternatively, use timestamp-based chunking, since Slack conversations are in bursts. Within each thread / timestamp window, chunk into 500 tokens per chunk. Store chunk metadata: channel name, thread ID, timestamp, author.. See MLOps section for comment about privacy issues with Slack data.
+- Documentation (markdown): split by semantic units relevant for .md, like headings, sections, or some token threshold that makes sense (default here for example is 1600 tokens). Optionally split at headings (#, ##..), and if a section is too large, do sliding window chunking with a smaller token size. Important to keep code blocks intact. Could also be done more automatically with Llamaindex (source is the comments here: https://www.reddit.com/r/Rag/comments/1k9m4vs/advice_needed_best_way_to_chunk_markdown_from_a/). Store chunk metadata: URI, last modified timestamp, author…
+- GitHub: split long issues / PRs into chunks of 200-500 tokens (source for threshold: GPT5 + Gemini). Extract code snippets as separate chunks. Alternatively, chunk by comments /thread turns, and join too-short comments into conversation windows with sliding chunking. Store chunk metadata: source type (issue, pr, comment), repo name, issue/PR number, created_at…
+- Slack: probably good to chunk by thread or else we lose context across chunks. Alternatively, use timestamp-based chunking, since Slack conversations are in bursts. Within each thread / timestamp window, chunk into 500 tokens per chunk. Store chunk metadata: channel name, thread ID, timestamp, author.. See MLOps section for comment about privacy issues with Slack data.
  
 - TRADEOFF ALERT - larger chunks are better for retaining context within each vector, but you might lose the granularity of the information if you are trying to embed larger amounts of text in a single fixed-size vector. I believe that the modular chunking schemes that take into account the data source account for this nicely.
  
