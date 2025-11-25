@@ -1,7 +1,7 @@
 # RAG architecture overview
 
 First, I will lay out a diagram of my architecture, and each part of the pipeline will be detailed below (I thank ChatGPT for the drawing!).
-
+```
 User Query
    │
    ▼
@@ -28,7 +28,7 @@ Synthesizer / Generation LLM
    │
    ▼
 Final Response → User (with evidence, provenance)
-
+```
 
 ## Step 1: Data Ingestion
  
@@ -41,7 +41,7 @@ Recall that our setup consists of three databases, updated via our data ingestio
  
 - TRADEOFF ALERT - Using namespace partitioning for different sources is easier to maintain and allows for source-targeted queries. The alternative is multiple stores, each maintained by a separate engine, which would make sense if there are great discrepancies in scale / compliance requirements for each source. I would opt for ease of maintenance here (unless we know something substantial about scale relations between sources).
  
-### s
+### When are vector store and BM25 index updated?
  
 We perform asynchronous update via ingestion workers that run on schedule or event-driven triggers, such as:
 1.	GitHub webhook update (e.g., newly performed merge)
