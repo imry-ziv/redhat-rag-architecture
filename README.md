@@ -31,8 +31,8 @@ Final Response → User (with evidence, provenance)
 ```
 
 ## Step 1: Data Ingestion
- 
-Recall that our setup consists of three databases, updated via our data ingestion logic:
+
+Our setup consists of three databases, updated via our data ingestion logic:
  
 1.	Vector Store for Embeddings + Lightweight Metadata (e.g. Pinecone-based): stores semantic embeddings, supports semantic search \ retrieval using text embeddings. Performance is tuned for ANN vector search. To support source-oriented retrieval, partition vector store by namespace (docs, github, slack) and keep rich metadata.
 2.	Index Metadata DB for authoritative, ground-truth registry of all chunks in vector store (e.g. small Redis store).
@@ -48,14 +48,12 @@ We perform asynchronous update via ingestion workers that run on schedule or eve
 2.	Slack webhook update / scheduled web API call (e.g., new message posted in channel)
 3.	Watch / Fetch relevant markdown files (e.g. monitor repo, folder, docs site, pull updated or new .md files, etc.)
  
- 
-Ingestion requires source-specific preprocessing (normalization and cleaning) chunking, and metadata enrichment, as explained in the following sections.
- 
+  
 ### Preprocessing
  
 •	Documentation (markdown): remove formatting characters such as "---", table borders, whitespace, but preserve ## Headings. Remove front matter if exists.
 •	GitHub: normalize text by stripping Markdown only in PRs, remove signatures, identify labels and assignees, extract structured fields, but keep relevant structured metadata such as issue number, PR number, state, repo…
-•	Slack: remove Slack formatting. I checked the API and it looks like what would have to be removed is markers like <@user>, emoji, attachments. Also, flatten threaded messages for context.
+•	Slack: remove Slack formatting. According to Slack API: remove markers like <@user>, emoji, attachments. Also, flatten threaded messages for context.
  
 ### Chunking
 
@@ -67,7 +65,7 @@ Ingestion requires source-specific preprocessing (normalization and cleaning) ch
  
 ### Embedding
  
-Generate embeddings per chunk with embedding model (e.g. OpenAI, see MLOps section for considerations), and update embedding into vector store under namespace corresponding to source.
+Generate embeddings per chunk with off-the-shelf embedding model (e.g. OpenAI), and update embedding into vector store under namespace corresponding to source.
  
  
 ### Metadata DB Update
@@ -92,10 +90,10 @@ Thus, our RAG system needs to first classify which question type the user query 
 
 1. First, use fast rule-based heuristics (regex) to identify obvious cases of status checks. For example, search for regex expressions containing "issue #\d+", "PR…", "status", "open/closed"…
 2.	Fallback to an LLM intent classifier with a small prompt that classifies into DOCS_LOOKUP, GITHUB_STATUS, SYNTHESIS, UNKNOWN, and also yields confidence score. Specifically, the intent classifier will return the following routing info, JSON-formatted:
-   1. Intent type (the above labels)Data sources to query 
-         2. Retrieval mode = semantic search, exact ID lookup, hybrid between the two 
-         3. Query "transformations" = relevant entities extracted by the LLM intent classifier relevant for the query, see below example 
-         4. Confidence 
+   - Intent type (the above labels)Data sources to query 
+   - Retrieval mode = semantic search, exact ID lookup, hybrid between the two 
+   - Query "transformations" = relevant entities extracted by the LLM intent classifier relevant for the query, see below example 
+   - Confidence 
 
 For example, a user query like "What is the signature of getUserProfile?" might get the following routing output:
 ```
@@ -132,10 +130,10 @@ Also, the retrieval planner is supposed to output actual machine-runnable querie
  
 After the retrieval planner, we run the actual retrieval algorithm:
  
-•	As mentioned, use a hybrid retriever, that combines semantic vector store ANN search with lexical BM25 keyword search for best precison-recall balancing.
-•	The retrieval execution is based exactly on the output of the planner, which outputs machine-runnable code. Specifically, it should run the vector search (embed query per source, then search vector index namespace corresponding to source with top_k parameter that was specified by the planner. Each of the k results is chunk text + light chunk metadata). If specified by the planner output, also run BM25 index search for keywords.
-•	If lookup parameter is SYNTHESIS (see intent classifier section), run parallel search across all sources to decrease latency.
-•	Optional (ChatGPT suggestion): use a freshness filter. For GH status prefer metadata DB / API to other chunks, for docs, prefer pages with a more recent last_modified, etc.
+- As mentioned, use a hybrid retriever, that combines semantic vector store ANN search with lexical BM25 keyword search for best precison-recall balancing.
+- The retrieval execution is based exactly on the output of the planner, which outputs machine-runnable code. Specifically, it should run the vector search (embed query per source, then search vector index namespace corresponding to source with top_k parameter that was specified by the planner. Each of the k results is chunk text + light chunk metadata). If specified by the planner output, also run BM25 index search for keywords.
+- If lookup parameter is SYNTHESIS (see intent classifier section), run parallel search across all sources to decrease latency.
+- Optional (ChatGPT suggestion): use a freshness filter. For GH status prefer metadata DB / API to other chunks, for docs, prefer pages with a more recent last_modified, etc.
  
 So the output from this stage is an array of top-k chunks per source with metadata and relavance scores.
  
@@ -144,10 +142,10 @@ So the output from this stage is an array of top-k chunks per source with metada
 Two components:
 1.	Re-ranking LLM that picks 3-6 most relevant passages across all sources. The reranker is given the query + a set of candidate passages yielded by previous score.
 2.	LLM grounded generation of response, with an engineered prompt + context for:
-a.	Ask the model to answer the user with a short "source" list for each claim, including URLs to sources.
-b.	Label uncertain statements as such and display raw chunks relevant to the uncertain statement.
-c.	Could use MCP tool call for authoritative metadata DB searches (e.g. issue state, PR mergeability), that is, the LLM actually calls the API in realtime.
-d.	Add hallucination penalty!!
+   - Ask the model to answer the user with a short "source" list for each claim, including URLs to sources.
+     - Label uncertain statements as such and display raw chunks relevant to the uncertain statement.
+       - Could use MCP tool call for authoritative metadata DB searches (e.g. issue state, PR mergeability), that is, the LLM actually calls the API in realtime.
+         - Add hallucination penalty!!
  
 This is the final answer returned to the user.
  
