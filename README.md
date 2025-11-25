@@ -140,11 +140,12 @@ For this to work, the services that must be orchestrated by FastAPI behind the s
 3.	MetadataDB (Postgres, Redis) - authoritative for RAG artifacts
 4.	LLM provider (e.g. OpenAI, Anthropic), for final LLM generator
 5.	LLM provider for more specific finetuned tasks such as intent classification and reranking
- 
- 
+
+The API should be async-capable to handle multiple simultaneous retrieval and LLM calls efficiently, especially when reranking or fetching from multiple sources.
+
 I will not be writing the code, but here are the minimal responsibilities and endpoints for this:
  
-Minimal responsibilities:
+### Minimal responsibilities:
 - auth & rate limit
 - call intent classifier (router)
 - ask retrieval planner for plan
@@ -153,27 +154,37 @@ Minimal responsibilities:
 - construct prompt & call generation model
 - return answer + evidence + provenance + tool links
  
-Minimal endpoints:
+### Minimal endpoints:
 - POST /v1/query — main query endpoint
 - GET /healthz — liveness
 - GET /readyz — readiness 
 - POST /admin/reindex — admin trigger for ingestion (authenticated)
  
  
-C## ontainerization and container orchestration
+## Containerization
  
 Containerize the following separately:
 1.	API / Orchestrator. Needs async support, isolates dependencies.
 2.	Data ingestion workers. Are .worker dockerfiles, will be long running because of periodic reading of docs, GH, slack, and updates of vector store / BM25 / metadata DB.
-3.	Vector store. Use Pinecone client, to ensure consistent versioning and configs.
+3.	Vector store. Use Pinecone client (needed only if self hosted, otherwise API client inside API container), to ensure consistent versioning and configs.
 4.	BM25 - ElasticSearch container.
 5.	Metadata DB - PostgreSQL container.
 6.	Reranker LLM container - containerize to allow it to scale independantly from API.
 7.	No need for LLM service containerization since we are using external API client (inside API container, OpenAPI or Anthropic).
- 
+
+## Container Orchestration and Deployment
+
 Orchestrate the above containers with OpenShift (of course…):
  
-- Run each RAG component (client / container) in an OpenShift pod.
+- Pods and services: Each component runs in an OpenShift pod. the services expose stable endpoints and routes expose API externally.
+
+- Persistance: use Persistent Volumes for BM25 indices and metadata DB to survive restarts.
+
+- Scaling and health: use Horizontal Pod Autoscaler for API, workers, reranker, do liveness/readiness probes to ensure self-healing.
+
+- Config and secrets: ConfigMaps for config, Secrets for credentials (LLM keys, GitHub/Slack tokens).
+
+- FINAL WORKFLOW: API receives query → router → retrieval planner → executor → reranker → final LLM → response. Ingestion workers keep vector store, BM25, and metadata DB up to date.
  
  
 
