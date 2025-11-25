@@ -36,7 +36,7 @@ Our setup consists of three databases, updated via our data ingestion logic:
  
 1.	Vector Store for Embeddings + Lightweight Metadata (e.g. Pinecone-based): stores semantic embeddings, supports semantic search \ retrieval using text embeddings. Performance is tuned for ANN vector search. To support source-oriented retrieval, partition vector store by namespace (docs, github, slack) and keep rich metadata.
 2.	Index Metadata DB for authoritative, ground-truth registry of all chunks in vector store (e.g. small Redis store).
-3.	BM25 index for keyword search (e.g. ElasticSearch, optional, but can help with…)
+3.	BM25 index for keyword search (e.g. ElasticSearch)
  
  
 - TRADEOFF ALERT - Using namespace partitioning for different sources is easier to maintain and allows for source-targeted queries. The alternative is multiple stores, each maintained by a separate engine, which would make sense if there are great discrepancies in scale / compliance requirements for each source. I would opt for ease of maintenance here (unless we know something substantial about scale relations between sources).
