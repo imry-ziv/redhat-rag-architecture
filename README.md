@@ -90,7 +90,8 @@ Thus, our RAG system needs to first classify which question type the user query 
 
 1. First, use fast rule-based heuristics (regex) to identify obvious cases of status checks. For example, search for regex expressions containing "issue #\d+", "PR…", "status", "open/closed"…
 2.	Fallback to an LLM intent classifier with a small prompt that classifies into DOCS_LOOKUP, GITHUB_STATUS, SYNTHESIS, UNKNOWN, and also yields confidence score. Specifically, the intent classifier will return the following routing info, JSON-formatted:
-   - Intent type (the above labels)Data sources to query 
+   - Intent type (the above labels)
+   - Data sources to query 
    - Retrieval mode = semantic search, exact ID lookup, hybrid between the two 
    - Query "transformations" = relevant entities extracted by the LLM intent classifier relevant for the query, see below example 
    - Confidence 
@@ -124,7 +125,7 @@ Downstream retrieval pipeline uses the JSON routing data, using the first part o
 3.	Which retrieval mode to use (semantic, BM25, hybrid, metadata only…)
 4.	Whether to expand the query or use keywords
  
-This is meant to incorporate the confidence information that the previous component outputs into the routing decision. Differently from the intent classifier, I would not use an LLM here, but a deterministic rule based Python class (maybe a decision tree), because latency should be very fast, and the system instructions output by it should be highly predictable. 
+This is meant to incorporate the confidence information that the previous component outputs into the routing decision. Differently from the intent classifier, I would not use an LLM here, but a deterministic rule based Python class (maybe a decision tree), because latency should be very low, and the system instructions output by it should be highly predictable. 
  
 Also, the retrieval planner is supposed to output actual machine-runnable queries (either for the semantic store, or for the BM25 index, or for the metadata DB), to be run in the retrieval algorithm.
  
@@ -141,11 +142,11 @@ So the output from this stage is an array of top-k chunks per source with metada
  
 Two components:
 1.	Re-ranking LLM that picks 3-6 most relevant passages across all sources. The reranker is given the query + a set of candidate passages yielded by previous score.
-2.	LLM grounded generation of response, with an engineered prompt + context for:
-   - Ask the model to answer the user with a short "source" list for each claim, including URLs to sources.
-     - Label uncertain statements as such and display raw chunks relevant to the uncertain statement.
-       - Could use MCP tool call for authoritative metadata DB searches (e.g. issue state, PR mergeability), that is, the LLM actually calls the API in realtime.
-         - Add hallucination penalty!!
+2.	LLM grounded generation of response, with an engineered prompt + context for:-
+- Ask the model to answer the user with a short "source" list for each claim, including URLs to sources. 
+- Label uncertain statements as such and display raw chunks relevant to the uncertain statement. 
+- Could use MCP tool call for authoritative metadata DB searches (e.g. issue state, PR mergeability), that is, the LLM actually calls the API in realtime. 
+- Add hallucination penalty!!
  
 This is the final answer returned to the user.
  
@@ -158,7 +159,7 @@ This is the final answer returned to the user.
 Note that the API (e.g., FastAPI) for the RAG system must:
 - Receive user queries
 - Authenticate
-- Call the pipeline: Router (intent class.) -> Retreival Planner -> Retrieval Executor -> Reranker LLM -> Prompt Builder -> Final LLM generator.
+- Call the pipeline: Router (intent classifiers) -> Retreival Planner -> Retrieval Executor -> Reranker LLM -> Prompt Builder -> Final LLM generator.
  
 For this to work, the services that must be orchestrated by FastAPI behind the scenes are:
  
