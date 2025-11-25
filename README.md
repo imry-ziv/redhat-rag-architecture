@@ -1,5 +1,73 @@
 # RAG architecture overview
 
+First, I will lay out a diagram of my architecture, and each part of the pipeline will be detailed below (I thank ChatGPT for the drawing!).
+
++--------------------+
+|    User Query       |
++---------+----------+
+          |
+          v
++--------------------+
+| Intent Classifier / |
+| Router (LLM + rules)|
++---------+----------+
+          |
+          | JSON routing info:
+          | { intent, sources, mode, entities, confidence }
+          v
++--------------------+
+| Retrieval Planner   |
+| (deterministic /    |
+| rule-based / tree)  |
++---------+----------+
+          |
+          | Retrieval plan:
+          | { which index, top_k, retrieval mode,
+          |  query expansion, source targets }
+          v
++---------------------------+
+| Retrieval Executor /      |
+| Hybrid Retriever          |
+| ------------------------- |
+|  - Vector Store (ANN)     |
+|    • Namespaces: docs,    |
+|      github, slack        |
+|    • Chunk embeddings +   |
+|      lightweight metadata |
+|  - BM25 Index             |
+|    • Tokenized text       |
+|    • Same chunk IDs       |
+|  - Metadata DB (authoritative) |
+|    • Source IDs, timestamps |
++---------+-----------------+
+          |
+          | Retrieved top-k chunks per source
+          v
++---------------------------+
+| Optional Reranker LLM     |
+| (3–6 most relevant chunks)|
++---------+-----------------+
+          |
+          v
++---------------------------+
+| Synthesizer / Generation |
+| LLM Grounded Response    |
+| -------------------------|
+| - Prompts engineered with|
+|   retrieved chunks       |
+| - Provide sources & URLs |
+| - Flag uncertainty       |
+| - Optionally call metadata|
+|   DB for authoritative   |
++---------+-----------------+
+          |
+          v
++---------------------------+
+|  Response + Evidence +    |
+|  Provenance to User       |
++---------------------------+
+
+
 ## Step 1: Data Ingestion
  
 Recall that our setup consists of three databases, updated via our data ingestion logic:
@@ -8,11 +76,10 @@ Recall that our setup consists of three databases, updated via our data ingestio
 2.	Index Metadata DB for authoritative, ground-truth registry of all chunks in vector store (e.g. small Redis store).
 3.	BM25 index for keyword search (e.g. ElasticSearch, optional, but can help with…)
  
-- TRADEOFF ALERT - 
  
-- TRADEOFF ALERT #2 - Using namespace partitioning for different sources is easier to maintain and allows for source-targeted queries. The alternative is multiple stores, each maintained by a separate engine, which would make sense if there are great discrepancies in scale / compliance requirements for each source. I would opt for ease of maintenance here (unless we know something substantial about scale relations between sources).
+- TRADEOFF ALERT - Using namespace partitioning for different sources is easier to maintain and allows for source-targeted queries. The alternative is multiple stores, each maintained by a separate engine, which would make sense if there are great discrepancies in scale / compliance requirements for each source. I would opt for ease of maintenance here (unless we know something substantial about scale relations between sources).
  
-### When are vector store and BM25 index updated?
+### s
  
 We perform asynchronous update via ingestion workers that run on schedule or event-driven triggers, such as:
 1.	GitHub webhook update (e.g., newly performed merge)
@@ -20,7 +87,7 @@ We perform asynchronous update via ingestion workers that run on schedule or eve
 3.	Watch / Fetch relevant markdown files (e.g. monitor repo, folder, docs site, pull updated or new .md files, etc.)
  
  
-Ingestion requires source-specific preprocessing (normalization and cleaning) chunking, and metadata enrichment:
+Ingestion requires source-specific preprocessing (normalization and cleaning) chunking, and metadata enrichment, as explained in the following sections.
  
 ### Preprocessing
  
@@ -63,10 +130,10 @@ Thus, our RAG system needs to first classify which question type the user query 
 
 1. First, use fast rule-based heuristics (regex) to identify obvious cases of status checks. For example, search for regex expressions containing "issue #\d+", "PR…", "status", "open/closed"…
 2.	Fallback to an LLM intent classifier with a small prompt that classifies into DOCS_LOOKUP, GITHUB_STATUS, SYNTHESIS, UNKNOWN, and also yields confidence score. Specifically, the intent classifier will return the following routing info, JSON-formatted:
-1. Intent type (the above labels)Data sources to query
-   2. Retrieval mode = semantic search, exact ID lookup, hybrid between the two
-   3. Query "transformations" = relevant entities extracted by the LLM intent classifier relevant for the query, see below example
-   4. Confidence 
+   1. Intent type (the above labels)Data sources to query 
+         2. Retrieval mode = semantic search, exact ID lookup, hybrid between the two 
+         3. Query "transformations" = relevant entities extracted by the LLM intent classifier relevant for the query, see below example 
+         4. Confidence 
 
 For example, a user query like "What is the signature of getUserProfile?" might get the following routing output:
 ```
@@ -165,7 +232,7 @@ I will not be writing the code, but here are the minimal responsibilities and en
  
 Containerize the following separately:
 1.	API / Orchestrator. Needs async support, isolates dependencies.
-2.	Data ingestion workers. Are .worker dockerfiles, will be long running because of periodic reading of docs, GH, slack, and updates of vector store / BM25 / metadata DB.
+2.	Data ingestion workers. Are ".worker" dockerfiles, will be long running because of periodic reading of docs, GH, slack, and updates of vector store / BM25 / metadata DB.
 3.	Vector store. Use Pinecone client (needed only if self hosted, otherwise API client inside API container), to ensure consistent versioning and configs.
 4.	BM25 - ElasticSearch container.
 5.	Metadata DB - PostgreSQL container.
@@ -174,17 +241,101 @@ Containerize the following separately:
 
 ## Container Orchestration and Deployment
 
-Orchestrate the above containers with OpenShift (of course…):
+Orchestrate the above containers with OpenShift:
  
 - Pods and services: Each component runs in an OpenShift pod. the services expose stable endpoints and routes expose API externally.
 
-- Persistance: use Persistent Volumes for BM25 indices and metadata DB to survive restarts.
+- Use Persistent Volumes for BM25 indices and metadata DB to survive restarts (persistance)
 
 - Scaling and health: use Horizontal Pod Autoscaler for API, workers, reranker, do liveness/readiness probes to ensure self-healing.
+  - Autoscaling triggers: We were asked to scale, so let API pods scale based on query rate or CPU/memory usage. Let ingestion workers scale based on backlog of new documents or embeddings. Let reranker pods scale based on number of candidate passages to score.
 
-- Config and secrets: ConfigMaps for config, Secrets for credentials (LLM keys, GitHub/Slack tokens).
+- Config and secrets: use ConfigMaps for config, Secrets for credentials (LLM keys,GH/Slack tokens).
 
-- FINAL WORKFLOW: API receives query → router → retrieval planner → executor → reranker → final LLM → response. Ingestion workers keep vector store, BM25, and metadata DB up to date.
- 
- 
+- FINAL WORKFLOW: API receives query → router → retrieval planner → executor → reranker → final LLM → response.
+- 
+- Ingestion workers keep vector store, BM25, and metadata DB up to date (see "When are vector store and BM25 index updated?" above)|
+
+
+
+## Monitoring
+
+Here are KPIs I would monitor to ensure the RAG system is reliable, responsive, and provides high-quality answers (according to the correct question type, querying the correct source, etc.).
+
+
+### System performance
+
+- Retrieval accuracy = % of the top-k passages retrieved by semantic vector store search and BM25 that contain relevant content.
+- Routing correctness = how many of queries are correctly labeled by intent classifier (factual, status check, synthesis)
+- Data freshness = average age of latest vector store \ BM25 chunks over time. This can also "quantify" drift
+- Error / failure rate = errors like API errors, retreival failures, LLM generation errors (could be redundant if we have pod health, but this is not pod-specific but the general error rate of the system)
+### Answer quality
+
+- Hallucination rate = fraction of responses with unsupported facts, incorrect sources or references, etc.
+- Coverage of evidence = % answers linked to at least one passage from some source (the more the model provides responses that are not based on the retrieved chunks, the worse this metric is)
+
+### "Operational" stuff
+- CPU, memory, GPU utilization per pod: API, ingestion workers, reranking, synthesis LLM..
+- Pod health - how many crashes/restarts..
+- Throughput and latency - average query processing time, RPS / QPS, TTFB..
+
+
+Logging of metrics can be done via an OpenShift monitoring dashboard. 
+
+Some of these metrics require human labeling (retrieval accuracy, routing correctness, hallucination rate...). However, practically it would be better to approximate:
+- Use human review only for a subsample of queries (query periodically)
+- Create synthetic benchmarks (evaluation set) with known answers.
+- Use usage signals from users (clicks, feedback, how long to next query) as proxy for relevance.
+
+
+## CI / CD
+
+I already described the flow throughout the explanation of the architecture above, but here's a diagram (thanks to ChatGPT):
+                 ┌────────────────────────┐
+                 │   New Data Sources     │
+                 │                        │
+                 │ Slack Messages         │
+                 │ GitHub Data     │
+                 │ Markdown Docs          │
+                 └─────────┬──────────────┘
+                           │
+                           ▼
+                 ┌────────────────────────┐
+                 │   Event Detection /    │
+                 │   Polling / Webhooks   │
+                 └─────────┬──────────────┘
+                           │
+                           ▼
+                 ┌────────────────────────┐
+                 │  Ingestion Worker(s)   │
+                 │  (Containerized Pods!)  │
+                 └─────────┬──────────────┘
+                           │
+           ┌───────────────┼─────────────────┐
+           ▼               ▼                 ▼
+ ┌────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
+ │ Preprocess &   │ │ Vectorization / │ │ Update Metadata DB  │
+ │ Chunk Text     │ │ Embedding       │ │ (timestamps, IDs,   │
+ │ (Slack/GH/Docs)│ │ Generation      │ │ source paths)       │
+ └───────────────┘ └───────────────┬─┘ └─────────────────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ Update Vector Store │
+                         │ (semantic embeddings)│
+                         └─────────────────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ Update BM25 Index   │
+                         │ (inverted index)    │
+                         └─────────────────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │  Validation / QA    │
+                         │  (counts, sample    │
+                         │  queries, metadata) │
+                         └─────────────────────┘
+
 
